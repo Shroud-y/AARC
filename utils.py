@@ -78,7 +78,6 @@ def build_hourly_grid(df: pd.DataFrame) -> pd.DataFrame:
     hour_ns = 3_600_000_000_000  # 1 hour in nanoseconds
 
     min_hour: pd.Timestamp = df["start_kyiv"].min().floor("h")
-    # Compute max covered hour via integer arithmetic to avoid DST-ambiguous floor()
     max_end_ns = df["end_kyiv"].max().value
     max_hour_ns = (max_end_ns - 1) // hour_ns * hour_ns
     max_hour = pd.Timestamp(max_hour_ns, tz="UTC").tz_convert(TZ_KYIV)
