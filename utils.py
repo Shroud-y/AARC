@@ -7,10 +7,12 @@ alerts snapshot CSV, and exposes shared constants used across all model scripts.
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from zoneinfo import ZoneInfo
+from datetime import timezone, timedelta
 
 DATA_PATH = Path("data/alerts_snapshot.csv")
-TZ_KYIV = ZoneInfo("Europe/Kyiv")
+# MVP: fixed UTC+3 ("Kyiv" summer offset). We deliberately do NOT use the real
+# Europe/Kyiv zone (which switches +2/+3 with DST) — no location/DST tracking.
+TZ_KYIV = timezone(timedelta(hours=3))
 
 # All three models are evaluated on the SAME temporal split.
 # Train: [dataset start, SPLIT_DATE)   Test: [SPLIT_DATE, dataset end]
@@ -88,8 +90,8 @@ def build_hourly_grid(df: pd.DataFrame) -> pd.DataFrame:
 
     for row in df.itertuples(index=False):
         # Use integer UTC-nanosecond arithmetic to avoid tz-aware floor() raising
-        # ValueError on DST transitions (Europe/Kyiv is always +02:00 or +03:00,
-        # so UTC-hour boundaries == Kyiv-hour boundaries — floor in UTC is correct).
+        # Fixed UTC+3 means local-hour boundaries are exactly UTC boundaries
+        # shifted by 3h, so integer UTC-ns bucketing is exact (no DST edge cases).
         first_idx = (row.start_kyiv.value - min_ns) // hour_ns
         last_idx = (row.end_kyiv.value - 1 - min_ns) // hour_ns  # -1 ns: exclude exact-hour endpoint
         col = oblast_to_col[row.oblast]

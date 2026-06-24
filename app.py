@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 
 PARQUET_PATH = Path("model/hourly_probabilities.parquet")
@@ -91,26 +92,84 @@ def build_display_df(window_probs: pd.DataFrame) -> pd.DataFrame:
         how="left",
     )
     merged["alert_pct"] = (merged["alert_prob"] * 100).round(1)
+    merged["hover_label"] = merged["alert_pct"].apply(
+        lambda x: "No data" if pd.isna(x) else f"{x}%"
+    )
     return merged
 
 
 def main():
-    st.set_page_config(page_title="Ukraine Air Raid Alert Probability", layout="wide")
-    st.title("Ukraine — Air Raid Alert Probability by Oblast")
-    st.caption(
-        "Data snapshot: Vadimkin/ukrainian-air-raid-sirens-dataset. "
-        "Times are local (Kyiv, Europe/Kyiv). "
-        "Probability = historical occupancy — not a forecast."
-    )
+    st.set_page_config(page_title="Advanced Air Raid Calendar", layout="wide")
 
     prob_df = load_probabilities()
     geojson = load_geojson()
+    scores = load_scores()
 
-    st.subheader("Select time window (hour of day, Kyiv time)")
-    col1, col2 = st.columns([3, 1])
-    with col1:
+    ds_start = (scores or {}).get("dataset_start", "2022-03-15")
+    ds_end = (scores or {}).get("dataset_end", "2026-06-23")
+
+    st.markdown(
+        f"""
+        <style>
+        /* Fit everything on one screen, no page scroll */
+        .block-container {{
+            padding-top: 1.2rem;
+            padding-bottom: 0rem;
+            max-width: 100%;
+        }}
+        header[data-testid="stHeader"] {{ height: 0; background: transparent; }}
+        [data-testid="stToolbar"] {{ display: none; }}
+        footer {{ display: none; }}
+        #MainMenu {{ display: none; }}
+        /* Tighten vertical gaps between blocks */
+        [data-testid="stVerticalBlock"] {{ gap: 0.4rem; }}
+        /* Shift map + legend up without moving anything else */
+        [data-testid="stPlotlyChart"] {{ margin-top: -90px; }}
+        .aarc-header {{
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            padding-bottom: 6px;
+            border-bottom: 1px solid rgba(128,128,128,0.25);
+            margin-bottom: 16px;
+        }}
+        .aarc-meta {{
+            font-size: 0.76rem;
+            line-height: 1.55;
+            opacity: 0.6;
+        }}
+        .aarc-title {{ text-align: right; }}
+        .aarc-title h1 {{
+            margin: 0 0 2px 0;
+            font-size: 1.7rem;
+            line-height: 1.1;
+        }}
+        .aarc-title p {{
+            margin: 0;
+            font-size: 0.8rem;
+            opacity: 0.65;
+        }}
+        </style>
+        <div class="aarc-header">
+            <div class="aarc-meta">
+                Source: Vadimkin/ukrainian-air-raid-sirens-dataset<br>
+                Period: {ds_start} &ndash; {ds_end}<br>
+                Times: UTC+3 (Kyiv, no DST) &middot; occupancy probability &middot; not a forecast
+            </div>
+            <div class="aarc-title">
+                <h1>Advanced Air Raid Calendar</h1>
+                <p>2-day AI-assisted pet-project for the KSE AI Agentic Summer School</p>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    # ── Slider (full width above main columns) ────────────────────────────────
+    sl_col, metric_col = st.columns([4, 1])
+    with sl_col:
         hour_range = st.slider(
-            "Hours (0 = midnight, 12 = noon)",
+            "Time window — hour of day (Kyiv time)",
             min_value=0,
             max_value=23,
             value=(8, 20),
@@ -118,86 +177,112 @@ def main():
         )
     start_h, end_h = hour_range
     hours = selected_hours(start_h, end_h)
-
-    with col2:
+    with metric_col:
         if start_h <= end_h:
-            st.metric("Hours selected", f"{end_h - start_h + 1}h ({start_h:02d}:00–{end_h:02d}:59)")
+            st.metric("Hours selected", f"{end_h - start_h + 1}h  ({start_h:02d}–{end_h:02d})")
         else:
-            n = len(hours)
-            st.metric("Hours selected", f"{n}h (overnight: {start_h:02d}–{end_h:02d})")
+            st.metric("Hours selected", f"{len(hours)}h  overnight")
+
+    # ── Main row: map left, comparison right ──────────────────────────────────
+    map_col, info_col = st.columns([3, 2])
 
     window_probs = compute_window_probs(prob_df, hours)
     display_df = build_display_df(window_probs)
 
-    fig = px.choropleth(
-        display_df,
-        geojson=geojson,
-        locations="geojson_name",
-        featureidkey="properties.name:en",
-        color="alert_prob",
-        color_continuous_scale="Reds",
-        range_color=(0, 1),
-        labels={"alert_prob": "Alert probability"},
-        custom_data=["geojson_name", "alert_pct"],
-    )
-    fig.update_traces(
-        hovertemplate="<b>%{customdata[0]}</b><br>Alert chance: %{customdata[1]}%<extra></extra>"
-    )
-    fig.update_geos(
-        fitbounds="locations",
-        visible=False,
-    )
-    fig.update_layout(
-        margin={"r": 0, "t": 0, "l": 0, "b": 0},
-        coloraxis_colorbar=dict(title="Probability", tickformat=".0%"),
-        height=600,
-    )
+    with map_col:
+        fig = px.choropleth(
+            display_df,
+            geojson=geojson,
+            locations="geojson_name",
+            featureidkey="properties.name:en",
+            color="alert_prob",
+            color_continuous_scale="Reds",
+            range_color=(0, 1),
+            labels={"alert_prob": "Alert probability"},
+            custom_data=["geojson_name", "hover_label"],
+        )
+        fig.update_traces(
+            hovertemplate="<b>%{customdata[0]}</b><br>Alert chance: %{customdata[1]}<extra></extra>"
+        )
 
-    st.plotly_chart(fig, use_container_width=True)
+        # px.choropleth leaves NaN-valued regions unfilled (invisible).
+        # Draw them as a separate gray "No data" layer so Crimea etc. still appear.
+        no_data = display_df[display_df["alert_prob"].isna()]
+        if not no_data.empty:
+            fig.add_trace(
+                go.Choropleth(
+                    geojson=geojson,
+                    locations=no_data["geojson_name"],
+                    featureidkey="properties.name:en",
+                    z=[0] * len(no_data),
+                    colorscale=[[0, "rgba(120,120,120,0.45)"], [1, "rgba(120,120,120,0.45)"]],
+                    showscale=False,
+                    marker_line_width=0.4,
+                    marker_line_color="rgba(150,150,150,0.6)",
+                    hovertemplate="<b>%{location}</b><br>No data<extra></extra>",
+                )
+            )
 
-    with st.expander("Raw probability table"):
-        st.dataframe(
-            display_df[["geojson_name", "alert_pct"]]
-            .rename(columns={"geojson_name": "Oblast", "alert_pct": "Alert chance (%)"})
-            .sort_values("Alert chance (%)", ascending=False)
-            .reset_index(drop=True),
+        fig.update_geos(
+            fitbounds="locations",
+            visible=False,
+            bgcolor="rgba(0,0,0,0)",
+            projection_type="mercator",
+        )
+        fig.update_layout(
+            # Small top/right margin so colorbar title + 100% tick aren't clipped.
+            margin={"r": 10, "t": 24, "l": 0, "b": 0},
+            coloraxis_colorbar=dict(
+                title=dict(text="Alert probability", side="top"),
+                tickformat=".0%",
+                len=0.7,
+                thickness=12,
+                yanchor="middle",
+                y=0.5,
+            ),
+            # Taller box -> larger map fill, colorbar spans full height.
+            height=580,
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            dragmode=False,
+        )
+        st.plotly_chart(
+            fig,
             use_container_width=True,
+            config={"scrollZoom": False, "displayModeBar": False},
         )
 
-    # ── Model comparison ──────────────────────────────────────────────────────
-    st.divider()
-    st.subheader("Model Comparison — Brier Score")
-
-    scores = load_scores()
-    if scores is None:
-        st.info("Run `python compare_models.py` to generate model_scores.json.")
-    else:
-        baseline_brier = scores["models"][0]["brier"]
-        rows = []
-        for m in scores["models"]:
-            delta = m["brier"] - baseline_brier
-            rows.append({
-                "Model": m["name"],
-                "Brier score": m["brier"],
-                "vs Baseline": f"{'+' if delta > 0 else ''}{delta:.5f}",
-            })
-        scores_df = pd.DataFrame(rows)
-
-        st.dataframe(
-            scores_df,
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "Brier score": st.column_config.NumberColumn(format="%.5f"),
-            },
-        )
-        st.caption(
-            f"Test split: {scores['split_date']} to end of dataset "
-            f"({scores['test_cells']:,} oblast-hour pairs). "
-            f"Brier score: lower is better (0 = perfect, 0.25 = random). "
-            f"Alert base rate: {scores['alert_base_rate']:.1%}. "
-            f"Always-predict-0 baseline: {scores['brier_always_zero']:.5f}."
-        )
+    with info_col:
+        st.subheader("Model Comparison — Brier & PR-AUC")
+        if scores is None:
+            st.info("Run `python compare_models.py` to generate model_scores.json.")
+        else:
+            rows = []
+            for m in scores["models"]:
+                rows.append({
+                    "Model": m["name"],
+                    "Brier score": m["brier"],
+                    "PR-AUC": m.get("pr_auc"),
+                })
+            st.dataframe(
+                pd.DataFrame(rows),
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Brier score": st.column_config.NumberColumn(format="%.5f"),
+                    "PR-AUC": st.column_config.NumberColumn(format="%.5f"),
+                },
+            )
+            st.caption(
+                f"Test split: {scores['split_date']} to end of dataset "
+                f"({scores['test_cells']:,} oblast-hour pairs).  \n"
+                f"Brier: lower is better (0 = perfect, 0.25 = random).  \n"
+                f"PR-AUC: higher is better. With a ~{scores['alert_base_rate']:.0%} "
+                f"alert base rate, alerts are rare — PR-AUC focuses on the positive "
+                f"(alert) class, so it separates models better than Brier, which is "
+                f"dominated by the many easy no-alert hours. PR-AUC of a random "
+                f"classifier ~= the base rate ({scores['alert_base_rate']:.0%})."
+            )
 
 
 if __name__ == "__main__":

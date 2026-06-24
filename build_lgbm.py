@@ -137,10 +137,30 @@ def main():
     print(f"Saved predictions -> {OUT_PATH}  ({len(preds)} rows)")
 
     print("\nTop feature importances:")
-    for feat_name, imp in sorted(
-        zip(FEATURE_COLS, model.feature_importances_), key=lambda x: -x[1]
-    ):
+    ranked = sorted(zip(FEATURE_COLS, model.feature_importances_), key=lambda x: -x[1])
+    for feat_name, imp in ranked:
         print(f"  {feat_name:<20} {imp}")
+
+    # Save feature-importance bar chart for the report (not the app).
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    reports_dir = Path("reports")
+    reports_dir.mkdir(exist_ok=True)
+    names = [n for n, _ in ranked][::-1]   # ascending so largest is on top
+    vals = [v for _, v in ranked][::-1]
+    fig, ax = plt.subplots(figsize=(8, 4.5))
+    ax.barh(names, vals, color="#c0392b")
+    ax.set_xlabel("Importance (split count)")
+    ax.set_title("LightGBM feature importance")
+    for i, v in enumerate(vals):
+        ax.text(v, i, f" {v}", va="center", fontsize=8)
+    fig.tight_layout()
+    out_png = reports_dir / "feature_importance.png"
+    fig.savefig(out_png, dpi=130)
+    plt.close(fig)
+    print(f"Saved feature-importance plot -> {out_png}")
 
 
 if __name__ == "__main__":

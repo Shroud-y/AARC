@@ -76,6 +76,45 @@ def main():
     preds.to_parquet(OUT_PATH, index=False)
     print(f"Saved predictions -> {OUT_PATH}  ({len(preds)} rows)")
 
+    # ── Report plot (not the app): pooled 2x2 transition matrix heatmap ─────────
+    # Pool transition counts across all oblasts from TRAIN data, then row-normalize.
+    pooled = np.ones((2, 2))  # Laplace smoothing, same as per-oblast estimate
+    for oblast in oblasts:
+        s = train_grid[oblast].to_numpy()
+        for i in range(len(s) - 1):
+            pooled[s[i], s[i + 1]] += 1
+    pooled = pooled / pooled.sum(axis=1, keepdims=True)
+
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    reports_dir = Path("reports")
+    reports_dir.mkdir(exist_ok=True)
+    labels = {
+        (0, 0): "no-alert -> no-alert",
+        (0, 1): "no-alert -> alert",
+        (1, 0): "alert -> no-alert",
+        (1, 1): "alert -> alert",
+    }
+    fig, ax = plt.subplots(figsize=(5.5, 4.5))
+    im = ax.imshow(pooled, cmap="Reds", vmin=0, vmax=1)
+    ax.set_xticks([0, 1], labels=["no-alert", "alert"])
+    ax.set_yticks([0, 1], labels=["no-alert", "alert"])
+    ax.set_xlabel("Next hour state")
+    ax.set_ylabel("Current state")
+    ax.set_title("Markov transition matrix (pooled, train)")
+    for (i, j), p in np.ndenumerate(pooled):
+        ax.text(j, i, f"{labels[(i, j)]}\n{p:.3f}",
+                ha="center", va="center",
+                color="white" if p > 0.5 else "black", fontsize=9)
+    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04, label="P(next | current)")
+    fig.tight_layout()
+    out_png = reports_dir / "markov_transitions.png"
+    fig.savefig(out_png, dpi=130)
+    plt.close(fig)
+    print(f"Saved transition heatmap -> {out_png}")
+
 
 if __name__ == "__main__":
     main()

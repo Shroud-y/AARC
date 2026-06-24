@@ -19,6 +19,7 @@ import json
 import numpy as np
 import pandas as pd
 from pathlib import Path
+from sklearn.metrics import average_precision_score
 from utils import load_alerts, build_hourly_grid, SPLIT_DATE, TZ_KYIV
 
 MARKOV_PREDS = Path("model/markov_test_preds.parquet")
@@ -71,20 +72,26 @@ def main():
     print(f"Train: {len(train_grid)} hours  |  Test: {len(test_grid)} hours  |  Split: {SPLIT_DATE}")
 
     # ── 1. Frequency baseline ──────────────────────────────────────────────────
-    brier_baseline, _ = compute_baseline_brier(train_grid, test_grid)
+    brier_baseline, base_preds = compute_baseline_brier(train_grid, test_grid)
+    ap_baseline = float(average_precision_score(base_preds["y_true"], base_preds["y_pred"]))
 
     # ── 2. Markov ─────────────────────────────────────────────────────────────
     markov = pd.read_parquet(MARKOV_PREDS)
     brier_markov = float(((markov["y_pred"] - markov["y_true"]) ** 2).mean())
+    ap_markov = float(average_precision_score(markov["y_true"], markov["y_pred"]))
 
     # ── 3. LightGBM ────────────────────────────────────────────────────────────
     lgbm = pd.read_parquet(LGBM_PREDS)
     brier_lgbm = float(((lgbm["y_pred"] - lgbm["y_true"]) ** 2).mean())
+    ap_lgbm = float(average_precision_score(lgbm["y_true"], lgbm["y_pred"]))
 
     # ── Alignment check ────────────────────────────────────────────────────────
     n_test_cells = len(test_grid) * len(test_grid.columns)
     assert len(markov) == n_test_cells, f"Markov row count mismatch: {len(markov)} vs {n_test_cells}"
     assert len(lgbm) == n_test_cells, f"LightGBM row count mismatch: {len(lgbm)} vs {n_test_cells}"
+
+    naive_rate = float(test_grid.values.mean())
+    brier_always_zero = float((test_grid.values ** 2).mean())
 
     # ── Results ────────────────────────────────────────────────────────────────
     print()
@@ -92,45 +99,53 @@ def main():
     print(f"  Brier Score Comparison  (test: {SPLIT_DATE} to end)")
     print(f"  Test set: {n_test_cells:,} (oblast × hour) pairs")
     print("=" * 55)
-    print(f"  {'Model':<25}  {'Brier Score':>12}  {'vs Baseline':>12}")
-    print("  " + "-" * 51)
+    print(f"  {'Model':<25}  {'Brier':>10}  {'PR-AUC':>10}  {'vs Base':>10}")
+    print("  " + "-" * 61)
+    # (name, brier [lower better], pr_auc [higher better])
     models = [
-        ("Frequency baseline", brier_baseline),
-        ("Markov chain",       brier_markov),
-        ("LightGBM",           brier_lgbm),
+        ("Frequency baseline", brier_baseline, ap_baseline),
+        ("Markov chain",       brier_markov,   ap_markov),
+        ("LightGBM",           brier_lgbm,     ap_lgbm),
     ]
-    for name, score in models:
+    for name, score, ap in models:
         delta = score - brier_baseline
         arrow = f"{'-' if delta < 0 else '+' if delta > 0 else ' '}{abs(delta):.5f}"
-        print(f"  {name:<25}  {score:>12.5f}  {arrow:>12}")
+        print(f"  {name:<25}  {score:>10.5f}  {ap:>10.5f}  {arrow:>10}")
     print("=" * 55)
     print()
     best = min(models, key=lambda x: x[1])
-    print(f"  Best model: {best[0]}  (Brier = {best[1]:.5f})")
+    print(f"  Best model (Brier):  {best[0]}  (Brier = {best[1]:.5f})")
+    best_ap = max(models, key=lambda x: x[2])
+    print(f"  Best model (PR-AUC): {best_ap[0]}  (PR-AUC = {best_ap[2]:.5f})")
     print()
-    print("  Note: Brier score range 0 (perfect) to 1 (worst).")
+    print("  Note: Brier range 0 (perfect) to 1 (worst); PR-AUC higher is better.")
+    print(f"  PR-AUC baseline (random) = positive rate ~= {naive_rate:.5f}")
     print("  Random (p=0.5 always) ~= 0.25000")
-    naive_rate = float(test_grid.values.mean())
-    brier_always_zero = float((test_grid.values ** 2).mean())
-    brier_base_rate = naive_rate ** 2 + (1 - naive_rate) ** 2 * 0  # easier:
-    brier_base_rate = float(((naive_rate - test_grid.values) ** 2).mean())
     print(f"  Always-predict-0      ~= {brier_always_zero:.5f}  (base rate {naive_rate:.3f})")
 
     # Save scores for Streamlit app to display without recomputing
     scores_data = {
         "split_date": SPLIT_DATE,
+        "dataset_start": str(grid.index.min().date()),
+        "dataset_end": str(grid.index.max().date()),
         "test_cells": n_test_cells,
         "alert_base_rate": round(naive_rate, 5),
         "brier_always_zero": round(brier_always_zero, 5),
         "models": [
-            {"name": name, "brier": round(score, 5)}
-            for name, score in models
+            {"name": name, "brier": round(score, 5), "pr_auc": round(ap, 5)}
+            for name, score, ap in models
         ],
     }
     scores_path = Path("model/model_scores.json")
     with open(scores_path, "w") as f:
         json.dump(scores_data, f, indent=2)
     print(f"\nScores saved -> {scores_path}")
+
+    print("y_true sums:",
+      int(test_grid.values.sum()),
+      int(markov["y_true"].sum()),
+      int(lgbm["y_true"].sum()))
+
 
 
 if __name__ == "__main__":

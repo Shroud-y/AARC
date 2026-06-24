@@ -2,20 +2,21 @@
 Build hourly alert probability table from alerts_snapshot.csv.
 Output: model/hourly_probabilities.parquet (long format: oblast, hour, prob)
 
-Timestamps converted UTC -> Europe/Kyiv (handles DST via zoneinfo).
+Timestamps converted UTC -> fixed UTC+3 ("Kyiv"). MVP: we do NOT use the real
+Europe/Kyiv zone with DST (+2/+3) and do not track location — fixed +3 always.
 Probability = fraction of minutes in hour h that oblast was under alert,
               averaged across all days in the dataset (occupancy metric).
 """
 
 import pandas as pd
-from zoneinfo import ZoneInfo
+from datetime import timezone, timedelta
 from collections import defaultdict
 from pathlib import Path
 import datetime
 
 DATA_PATH = Path("data/alerts_snapshot.csv")
 OUT_PATH = Path("model/hourly_probabilities.parquet")
-TZ_KYIV = ZoneInfo("Europe/Kyiv")
+TZ_KYIV = timezone(timedelta(hours=3))
 
 
 def compute_hour_coverage(start_local: datetime.datetime, end_local: datetime.datetime) -> dict:
