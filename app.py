@@ -154,7 +154,7 @@ def main():
             <div class="aarc-meta">
                 Source: Vadimkin/ukrainian-air-raid-sirens-dataset<br>
                 Period: {ds_start} &ndash; {ds_end}<br>
-                Times: UTC+3 (Kyiv, no DST) &middot; occupancy probability &middot; not a forecast
+                Times: UTC+3 (Kyiv) &middot; occupancy probability &middot; not a forecast
             </div>
             <div class="aarc-title">
                 <h1>Advanced Air Raid Calendar</h1>

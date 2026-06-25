@@ -12,16 +12,16 @@ The map shows the baseline only. The Markov and LightGBM models are a separate *
 ## How to run
 
 ```bash
-# 1. Install dependencies (Python 3.11+)
+# Install dependencies (Python 3.11+)
 pip install -r requirements.txt
 
-# 2. Build the artifacts (reads data/, writes model/ and reports/)
-python build_model.py        # frequency baseline -> model/hourly_probabilities.parquet
-python build_markov.py       # Markov chain       -> model/markov_test_preds.parquet  + reports/markov_transitions.png
-python build_lgbm.py         # LightGBM           -> model/lgbm_test_preds.parquet    + reports/feature_importance.png
-python compare_models.py     # Brier + PR-AUC table -> model/model_scores.json
+# Build the artifacts
+python build_model.py        # frequency baseline
+python build_markov.py       # Markov chain
+python build_lgbm.py         # LightGBM
+python compare_models.py     # Brier + PR-AUC table
 
-# 3. Launch the app
+# Launch the app
 streamlit run app.py
 ```
 
@@ -31,7 +31,7 @@ The app reads only the pre-built `model/` and `data/` files — it never recompu
 
 The data comes from the [Vadimkin/ukrainian-air-raid-sirens-dataset](https://github.com/Vadimkin/ukrainian-air-raid-sirens-dataset) (`official_data_en.csv`): one row per alert, with a start and end timestamp per region. All source timestamps are UTC; we convert them to a fixed **UTC+3** offset for hour-of-day bucketing.
 
-> **Timezone caveat.** Real Kyiv time follows DST (UTC+2 in winter, UTC+3 in summer). This is an MVP with no location or DST tracking, so we deliberately pin a single fixed offset (UTC+3) rather than use the real `Europe/Kyiv` zone. Hours of the day are therefore approximate near DST boundaries — acceptable for an educational baseline, not for operational use.
+> **Timezone caveat.** Real Kyiv time follows DST (UTC+2 in winter, UTC+3 in summer). This is an MVP with no location or DST tracking, so we deliberately pin a single fixed offset (UTC+3) rather than use the real `Europe/Kyiv` zone.
 
 The repo uses a **static snapshot** committed to `data/alerts_snapshot.csv`, not a live feed. This is intentional: it makes every result in this README exactly reproducible. There is no scraping, no API polling, no daily refresh. The snapshot covers **2022-03-15 to 2026-06-23**.
 
@@ -92,9 +92,9 @@ The 2×2 transition matrix, pooled across all oblasts from the training period (
 ## How AI was used to build this
 
 I built this project by directing a coding agent (Claude Code) instead of
-writing the code by hand — partly to show the kind of AI-collaboration the
+writing the code by hand in order to show the kind of AI-collaboration the
 KSE program is about. My role was to set the goals, make the modelling
-decisions, and define the guardrails; the agent handled the implementation
+decisions, and define the guardrails. The agent at this time handled the implementation
 and iteration.
 
 The decisions that mattered were mine, not the agent's. The most important
@@ -102,9 +102,9 @@ one was a constraint, not code: every feature must use only data from strictly
 before the hour being predicted, with the explicit rule that a near-perfect
 score is a bug to hunt, not a success. I had the agent encode that guardrail
 into each build script. The other call I made myself was refusing to read the
-feature-importance chart at face value — the raw split-count bars are
+feature-importance chart at face value: the raw split-count bars are
 misleading, and reconciling them against the comparison table is what turned a
 generated plot into an actual finding.
 
-AI accelerated the build dramatically and let me finish in the time I had. The
+AI accelerated the build dramatically and let me finish in   the time I had. The
 judgement about what to measure, what to trust, and what to flag stayed with me.
