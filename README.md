@@ -83,7 +83,7 @@ The 2×2 transition matrix, pooled across all oblasts from the training period (
 
 - **Not a forecast.** Every output is a historical-frequency probability presented as a chance. It says "at this hour, historically, the odds looked like this" — it does not predict any specific future date.
 - **Hour-of-day only (map).** The map's baseline conditions on hour-of-day and nothing else: no day-of-week, no seasonality, no trend over the war's phases.
-- **Fixed timezone.** UTC+3 with no DST handling (see above) — hour buckets are approximate around DST switches.
+- **Fixed timezone.** UTC+3 with no DST handling (see above) — winter hours are shifted one hour late, since a fixed +3 is applied year-round.
 - **Occupancy ≠ onset.** The baseline measures the chance an alert is *active*, not the chance one *begins*. A long alert inflates many hour-buckets.
 - **Coarse Markov state.** Two states per oblast, hourly resolution, one pooled-by-oblast structure. It cannot represent duration, intensity, or cross-oblast dynamics.
 - **Snapshot, not live.** Results reflect one frozen download; they will not track current events.
@@ -94,7 +94,7 @@ The 2×2 transition matrix, pooled across all oblasts from the training period (
 I built this project by directing a coding agent (Claude Code) instead of
 writing the code by hand in order to show the kind of AI-collaboration the
 KSE program is about. My role was to set the goals, make the modelling
-decisions, and define the guardrails. The agent at this time handled the implementation
+decisions, and define the guardrails. The agent handled the implementation
 and iteration.
 
 The decisions that mattered were mine, not the agent's. The most important
@@ -108,3 +108,5 @@ generated plot into an actual finding.
 
 AI accelerated the build dramatically and let me finish in   the time I had. The
 judgement about what to measure, what to trust, and what to flag stayed with me.
+
+You can find my conversations with AI in /SESSION_x. Also check the INSTRUCTION.md for the initial prompt to Claude Code.
